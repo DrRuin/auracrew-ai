@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Criteria RAG walkthrough</title>
+    <meta name="description" content="A 10-minute walkthrough of Criteria RAG: the live app, the code and the design choices." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,300;6..72,400&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --night: #141e4f;
+        --panel: #1c2866;
+        --paper: #f2ecdf;
+        --soft: #c9d0f2;
+        --ochre: #e0a43a;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      body {
+        background: var(--night);
+        color: var(--paper);
+        font-family: "Instrument Sans", system-ui, sans-serif;
+        min-height: 100vh;
+      }
+      main {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px 16px 64px;
+      }
+      .kicker {
+        color: var(--ochre);
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      h1 {
+        font-family: "Newsreader", Georgia, serif;
+        font-weight: 300;
+        font-size: clamp(36px, 6vw, 64px);
+        margin: 8px 0 12px;
+      }
+      p.lede {
+        color: var(--soft);
+        font-size: 18px;
+        line-height: 1.5;
+        max-width: 760px;
+      }
+      video {
+        display: block;
+        width: 100%;
+        margin: 28px 0 24px;
+        border-radius: 12px;
+        background: #000;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      }
+      h2 {
+        font-family: "Newsreader", Georgia, serif;
+        font-weight: 400;
+        font-size: 26px;
+        margin: 8px 0 12px;
+      }
+      ol {
+        list-style: none;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 8px;
+      }
+      button {
+        width: 100%;
+        text-align: left;
+        display: flex;
+        gap: 14px;
+        align-items: baseline;
+        padding: 12px 14px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--panel);
+        color: var(--paper);
+        font: 15px/1.35 "Instrument Sans", system-ui, sans-serif;
+        cursor: pointer;
+      }
+      button:hover,
+      button:focus-visible {
+        outline: 2px solid var(--ochre);
+      }
+      button span {
+        color: var(--ochre);
+        font-variant-numeric: tabular-nums;
+        min-width: 3.2em;
+      }
+      footer {
+        margin-top: 32px;
+        color: var(--soft);
+        font-size: 14px;
+      }
+      a {
+        color: var(--ochre);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="kicker">A walkthrough</p>
+      <h1>Criteria RAG</h1>
+      <p class="lede">
+        A RAG assistant for banking documents. Every sentence cites its page, every claim is checked, every decision is
+        gated. Ten minutes on the live app, the code and the design choices.
+      </p>
+      <video id="video" controls preload="metadata" poster="walkthrough.jpg" playsinline>
+        <source src="walkthrough.mp4" type="video/mp4" />
+      </video>
+      <h2>Chapters</h2>
+      <ol id="chapters"></ol>
+      <footer>
+        Code: <a href="https://github.com/DrRuin/criteria-rag">github.com/DrRuin/criteria-rag</a>. The narration is an AI
+        clone of the author's voice.
+      </footer>
+    </main>
+    <script>
+      const chapters = [
+        [0, "The problem and what runs where"],
+        [56, "Wrong files, the upload flow and scanned pages"],
+        [134, "Questions: streamed steps, citations, table answers and follow-ups"],
+        [211, "How each answer was made, and the code map"],
+        [225, "Jev and verification"],
+        [283, "Human approval and the Cedar policy"],
+        [334, "Attempts to skip the checks, and off-topic questions"],
+        [349, "Why Strands Agents"],
+        [371, "Langfuse traces and accuracy"],
+        [397, "How to run it"],
+        [429, "FAQ: 23 questions"],
+      ];
+      const video = document.getElementById("video");
+      const list = document.getElementById("chapters");
+      for (const [at, title] of chapters) {
+        const item = document.createElement("li");
+        const button = document.createElement("button");
+        const time = document.createElement("span");
+        time.textContent = `${Math.floor(at / 60)}:${String(at % 60).padStart(2, "0")}`;
+        button.append(time, title);
+        button.addEventListener("click", () => {
+          video.currentTime = at;
+          video.play();
+          video.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+        item.append(button);
+        list.append(item);
+      }
+    </script>
+  </body>
+</html>
