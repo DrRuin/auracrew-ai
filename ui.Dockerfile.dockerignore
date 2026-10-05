@@ -1,0 +1,8 @@
+*
+!criteria-ui
+!nginx.conf
+criteria-ui/node_modules
+criteria-ui/dist
+criteria-ui/public/pdfjs
+criteria-ui/.ruff_cache
+criteria-ui/*.png

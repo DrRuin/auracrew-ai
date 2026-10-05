@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+note/*.aux
+note/*.log
+note/*.out
+evals/mcob450.pdf
+evals/ratesheet_scan.pdf

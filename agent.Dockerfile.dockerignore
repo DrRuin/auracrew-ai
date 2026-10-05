@@ -1,0 +1,5 @@
+*
+!criteria-agent/pyproject.toml
+!criteria-agent/uv.lock
+!criteria-agent/app
+**/__pycache__

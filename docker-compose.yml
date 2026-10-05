@@ -1,0 +1,217 @@
+name: criteria-agent
+
+x-langfuse-env: &langfuse-env
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+  NEXTAUTH_URL: ${PUBLIC_URL:-http://localhost:8000}/langfuse/api/auth
+  NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-local-nextauth-secret}
+  SALT: ${LANGFUSE_SALT:-local-salt}
+  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: redis
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+
+x-langfuse-depends: &langfuse-depends
+  postgres:
+    condition: service_healthy
+  clickhouse:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  minio:
+    condition: service_healthy
+
+services:
+  keys:
+    image: postgres:17
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        f=/keys/langfuse.env
+        [ -s "$$f" ] && exit 0
+        new() { printf '%s-%s' "$$1" "$$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"; }
+        {
+          printf "LANGFUSE_PUBLIC_KEY='%s'\n" "$${LANGFUSE_PUBLIC_KEY:-$$(new pk-lf)}"
+          printf "LANGFUSE_SECRET_KEY='%s'\n" "$${LANGFUSE_SECRET_KEY:-$$(new sk-lf)}"
+          printf "LANGFUSE_USER_EMAIL='%s'\n" "$$LANGFUSE_USER_EMAIL"
+          printf "LANGFUSE_USER_PASSWORD='%s'\n" "$$LANGFUSE_USER_PASSWORD"
+        } > "$$f.tmp"
+        mv "$$f.tmp" "$$f"
+    environment:
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_USER_EMAIL: ${LANGFUSE_USER_EMAIL:-admin@example.com}
+      LANGFUSE_USER_PASSWORD: ${LANGFUSE_USER_PASSWORD:-change-me-locally}
+    volumes:
+      - keys:/keys
+
+  agent:
+    restart: unless-stopped
+    build: {context: ., dockerfile: agent.Dockerfile}
+    env_file: criteria-agent/.env
+    entrypoint: ["sh", "-c"]
+    command: ["set -a; . /keys/langfuse.env; set +a; exec uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8080"]
+    volumes:
+      - keys:/keys:ro
+    environment:
+      LANGFUSE_HOST: http://langfuse-web:3000/langfuse
+      ENVIRONMENT: docker
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      CONVERTER_URL: http://gotenberg:3000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/ping')"]
+      interval: 5s
+      retries: 30
+    depends_on:
+      keys:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      langfuse-web:
+        condition: service_started
+      gotenberg:
+        condition: service_healthy
+
+  gotenberg:
+    restart: unless-stopped
+    image: gotenberg/gotenberg:8-libreoffice
+    command: ["gotenberg", "--libreoffice-deny-private-ips=true"]
+    ports:
+      - 127.0.0.1:3100:3000
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      retries: 30
+
+  ui:
+    restart: unless-stopped
+    build: {context: ., dockerfile: ui.Dockerfile}
+    environment:
+      AGENT_URL: http://agent:8080
+      LANGFUSE_URL: http://langfuse-web:3000
+    ports:
+      - ${PORT:-8000}:80
+    depends_on:
+      agent:
+        condition: service_healthy
+      langfuse-web:
+        condition: service_started
+
+  langfuse-web:
+    restart: unless-stopped
+    build:
+      context: https://github.com/langfuse/langfuse.git#v4.47.0
+      dockerfile: web/Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_PATH: /langfuse
+    image: criteria-langfuse-web:4.47.0
+    environment:
+      <<: *langfuse-env
+      LANGFUSE_INIT_ORG_ID: criteria
+      LANGFUSE_INIT_ORG_NAME: criteria
+      LANGFUSE_INIT_PROJECT_ID: criteria-agent
+      LANGFUSE_INIT_PROJECT_NAME: criteria-agent
+      LANGFUSE_INIT_USER_NAME: admin
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        set -a; . /keys/langfuse.env; set +a;
+        export LANGFUSE_INIT_PROJECT_PUBLIC_KEY="$$LANGFUSE_PUBLIC_KEY" LANGFUSE_INIT_PROJECT_SECRET_KEY="$$LANGFUSE_SECRET_KEY"
+        LANGFUSE_INIT_USER_EMAIL="$$LANGFUSE_USER_EMAIL" LANGFUSE_INIT_USER_PASSWORD="$$LANGFUSE_USER_PASSWORD";
+        exec dumb-init -- ./web/entrypoint.sh "$$@"
+      - keys
+    command: ["node", "./web/server.js", "--keepAliveTimeout", "110000"]
+    volumes:
+      - keys:/keys:ro
+    depends_on:
+      <<: *langfuse-depends
+      keys:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://$$(hostname):3000/langfuse/api/public/health"]
+      interval: 5s
+      retries: 30
+
+  langfuse-worker:
+    restart: unless-stopped
+    image: docker.langfuse.com/langfuse/langfuse-worker:4.47.0
+    environment: *langfuse-env
+    depends_on:
+      langfuse-web:
+        condition: service_healthy
+
+  postgres:
+    restart: unless-stopped
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - 127.0.0.1:5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      retries: 10
+
+  clickhouse:
+    restart: unless-stopped
+    image: clickhouse/clickhouse-server:25.12
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      retries: 10
+
+  redis:
+    restart: unless-stopped
+    image: redis:7
+    command: --requirepass redis --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis", "ping"]
+      interval: 3s
+      retries: 10
+
+  minio:
+    restart: unless-stopped
+    image: cgr.dev/chainguard/minio
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      retries: 10
+
+volumes:
+  keys:
+  postgres_data:
+  clickhouse_data:
+  redis_data:
+  minio_data:

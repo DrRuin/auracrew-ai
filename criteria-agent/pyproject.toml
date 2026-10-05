@@ -1,0 +1,50 @@
+[project]
+name = "criteria-agent"
+version = "0.1.0"
+description = "Question-answering agent over a lender criteria guide with claim-level grounding, a gated action, and an eval harness."
+requires-python = ">=3.13"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "fastapi>=0.142.2",
+    "httpx>=0.28.1",
+    "lxml>=6.1.3",
+    "openpyxl>=3.1.5",
+    "psycopg[binary]>=3.3.6",
+    "pydantic-settings>=2.15.0",
+    "pypdfium2>=5.13.0",
+    "python-calamine>=0.8.2",
+    "rapid-orientation>=0.0.11",
+    "sqlalchemy[asyncio]>=2.1.1",
+    "strands-agents[cedar,openai,otel]>=1.57.1",
+    "typesafe-sdk>=0.7.2",
+    "uvicorn>=0.54.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.18,<0.13"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = ""
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint.per-file-ignores]
+"app/main.py" = ["BLE001"]
+"app/answer/agent.py" = ["BLE001"]
+"app/gate/gate.py" = ["BLE001"]
+"app/ingest/uploads.py" = ["BLE001"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+
+[dependency-groups]
+dev = [
+    "py-spy>=0.4.2",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
